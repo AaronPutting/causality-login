@@ -27,6 +27,7 @@ import {
 } from "../zitadel";
 import { createSessionAndUpdateCookie } from "./cookie";
 import { getPublicHost } from "./host";
+import { isPasswordLoginAllowed } from "./password-allowlist";
 import { trySendVerification } from "./verify";
 
 const logger = createLogger("loginname");
@@ -97,20 +98,25 @@ export async function sendLoginname(command: SendLoginnameCommand) {
 
   const preventUserEnumeration = (organization: string | undefined) => {
     if (ignoreUnknownUsernames) {
-      logger.debug("ignoreUnknownUsernames is true, redirecting to password");
-      const paramsPasswordDefault = new URLSearchParams({
+      // Causality.bio: was "redirecting to password" -- but an unknown loginName (which is
+      // exactly what reaches this branch) is never the console admin, so there is nothing to
+      // protect here by offering a password box. Routes to the same /new-device page a real,
+      // not-yet-session'd guest lands on (see isPasswordLoginAllowed), so a guesser still
+      // cannot tell a real invited address from a made-up one by which page appears.
+      logger.debug("ignoreUnknownUsernames is true, redirecting to /new-device");
+      const paramsDevice = new URLSearchParams({
         loginName: command.loginName,
       });
 
       if (command.requestId) {
-        paramsPasswordDefault.append("requestId", command.requestId);
+        paramsDevice.append("requestId", command.requestId);
       }
 
       if (organization) {
-        paramsPasswordDefault.append("organization", organization);
+        paramsDevice.append("organization", organization);
       }
 
-      return { redirect: "/password?" + paramsPasswordDefault };
+      return { redirect: "/new-device?" + paramsDevice };
     }
 
     return { error: t("errors.userNotFound") };
@@ -435,6 +441,15 @@ export async function sendLoginname(command: SendLoginnameCommand) {
               paramsPassword.append("requestId", command.requestId);
             }
 
+            // Causality.bio: every invited guest's only auth method is PASSWORD (a never-
+            // disclosed, server-rotated secret -- see tools/invite.py), so this branch is
+            // exactly the one that would otherwise show a guest a password box. Route
+            // anyone not on the allowlist (in practice just the console admin) to
+            // /new-device instead -- see password-allowlist.ts and docs/STATUS-phase2.md "2b".
+            if (!isPasswordLoginAllowed(redirectLoginName)) {
+              return { redirect: "/new-device?" + paramsPassword };
+            }
+
             return {
               redirect: "/password?" + paramsPassword,
             };
@@ -484,7 +499,14 @@ export async function sendLoginname(command: SendLoginnameCommand) {
       ) {
         const passkeyParams = new URLSearchParams({
           loginName: redirectLoginName,
-          altPassword: `${methods.authMethodTypes.includes(AuthenticationMethodType.PASSWORD) && userLoginSettings?.allowLocalAuthentication}`, // show alternative password option only if allowed
+          // Causality.bio: also gated on isPasswordLoginAllowed, not just the login
+          // settings -- a future guest with a passkey must still never be offered password
+          // as a fallback here either. See password-allowlist.ts.
+          altPassword: `${
+            methods.authMethodTypes.includes(AuthenticationMethodType.PASSWORD) &&
+            userLoginSettings?.allowLocalAuthentication &&
+            isPasswordLoginAllowed(redirectLoginName)
+          }`,
         });
 
         if (command.requestId) {
@@ -520,6 +542,12 @@ export async function sendLoginname(command: SendLoginnameCommand) {
 
         if (organization) {
           paramsPasswordDefault.append("organization", organization);
+        }
+
+        // Causality.bio: see the identical guard above -- same reasoning, this is the other
+        // code path that reaches a PASSWORD-only user.
+        if (!isPasswordLoginAllowed(redirectLoginName)) {
+          return { redirect: "/new-device?" + paramsPasswordDefault };
         }
 
         return {

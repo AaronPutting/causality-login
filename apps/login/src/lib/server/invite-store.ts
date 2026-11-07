@@ -5,27 +5,36 @@
  *
  * Record format is a tiny shared contract with causality-auth's tools/invite.py (a different
  * repo, a different language, writing the same directory): one JSON file per invite, named
- * `sha256(token).json`, holding everything needed to complete the session. The record DOES
- * include a `password` field (see below) -- the one piece of per-invite secret state this
- * directory holds -- but that is no new exposure: whoever already has the raw token (needed
- * to compute the filename in the first place) can fully authenticate as this user regardless,
- * so the password field is equivalent in sensitivity to the token itself, not an additional
- * credential beyond it. `tools/invite.py` sets this password on the user at invite time
- * (never shown to, or typed by, the guest; it exists purely so this file's `password` check
- * produces a session factor Login V2's own stock code recognizes as primary -- see
- * invite-redeem.ts's top comment for why).
+ * `sha256(token).json`, holding everything needed to complete the session, including a
+ * `password` field -- see tools/invite.py's `set_invite_password` for why that exists and
+ * invite-redeem.ts's top comment for how it is used.
+ *
+ * SECURITY (found and fixed 2026-11-07, docs/STATUS-phase2.md "2b"): a used record used to
+ * keep that password verbatim in its `.used` sibling forever, in a world-writable directory.
+ * The *token* going dead on redemption (below) does not make the *password* go dead too --
+ * password login, unlike the token, has no single-use concept of its own, so the earlier
+ * design meant anyone who could read that directory could keep signing in as the guest until
+ * Aaron happened to invite them again. Two independent fixes, both applied, not an either/or:
+ * (1) `claimInvite` below now overwrites the `.used` file's content to drop the `password`
+ * field, immediately after the atomic rename that claims it; (2) `invite-redeem.ts` rotates
+ * the user's actual Zitadel password to a fresh, never-stored value right after confirming
+ * the session, so even a reader fast enough to catch the brief window in (1) gets a password
+ * that no longer works. Expired records (live or already-used) are deleted outright, both
+ * opportunistically here (`peekInvite`/`claimInvite`) and by a periodic sweep
+ * (`tools/invite.py --cleanup`, wired into the nightly backup cron) -- a record with nothing
+ * left to protect is still a record naming a real person, no reason to keep it past its TTL.
  *
  * Single-use is enforced with `fs.rename` to a `.used` sibling: rename is atomic on the same
  * filesystem, so two concurrent redemptions (a double click, a retried POST) can never both
  * see "not yet claimed" -- exactly one rename call succeeds, the other gets ENOENT.
  *
- * The directory (CAUSALITY_INVITE_STORE_DIR, bind-mounted from the host) is created world
- * read/write/execute (0777) by run.sh: tools/invite.py runs directly on the host as `aaron`,
- * this container runs as `nextjs` (uid 1001), and `rename`/`unlink` permission comes from the
- * *directory's* write bit, not the file's own owner or mode. That tradeoff (a world-writable
- * directory) is acceptable for a pilot-scale, single-host setup given the records' contents
- * are no more sensitive than the token already is -- not a pattern to reuse for a directory
- * holding an independent credential.
+ * The directory (CAUSALITY_INVITE_STORE_DIR, bind-mounted from the host) is owned by `aaron`
+ * (gid 1000) with the setgid bit (mode 2770, see run.sh): tools/invite.py runs directly on
+ * the host as `aaron`, this container is given that same gid as a supplementary group
+ * (`group_add` in docker-compose.yml) so it can create/rename/read files via the group bits
+ * without the directory or its files (mode 0660) being readable or writable by anyone else on
+ * the host. Not world-writable any more -- that was never required for the uid mismatch, only
+ * convenient; see docs/STATUS-phase2.md "2b" for the full before/after.
  */
 
 import { createHash } from "crypto";
@@ -75,14 +84,26 @@ function isExpired(record: InviteRecord): boolean {
   return new Date(record.expiresAt).getTime() <= Date.now();
 }
 
-/** Read-only check, safe to call from a GET: never consumes the invite. */
+/** Best-effort delete; a concurrent cleanup or redemption already removing the same file is
+ * not an error here, there is nothing left to do either way. */
+async function unlinkQuiet(file: string): Promise<void> {
+  await fs.unlink(file).catch(() => {});
+}
+
+/** Read-only check, safe to call from a GET: never consumes the invite, but does delete an
+ * expired record outright (nothing left in it worth protecting, no reason to keep naming a
+ * real person on disk past its own TTL). */
 export async function peekInvite(token: string): Promise<PeekResult> {
   if (!token) return { status: "not_found" };
   const file = fileFor(token);
 
   const record = await readRecord(file);
   if (record) {
-    return isExpired(record) ? { status: "expired" } : { status: "ok", record };
+    if (isExpired(record)) {
+      await unlinkQuiet(file);
+      return { status: "expired" };
+    }
+    return { status: "ok", record };
   }
 
   // Not found as a live record -- it may be an already-claimed one. Distinguish "used" from
@@ -106,6 +127,7 @@ export async function claimInvite(token: string): Promise<ClaimResult> {
     return peeked.status === "ok" ? { status: "not_found" } : peeked;
   }
   if (isExpired(record)) {
+    await unlinkQuiet(file);
     return { status: "expired" };
   }
 
@@ -117,6 +139,18 @@ export async function claimInvite(token: string): Promise<ClaimResult> {
     if (err?.code === "ENOENT") return { status: "used" };
     throw err;
   }
+
+  // SECURITY: the password's job ended the instant the rename above succeeded -- strip it
+  // from the file that now sits on disk indefinitely. The in-memory `record` returned below
+  // still has it, which is fine (and necessary: invite-redeem.ts needs it for this one
+  // session check, and also rotates the live Zitadel password right after using it). Best
+  // effort: if this write fails, the record is still correctly claimed (single-use holds
+  // either way), just logged nowhere today -- a stale password sitting a little longer in a
+  // 0660 file only this host's own invite tooling can read is a far smaller exposure than the
+  // world-readable version this replaces, and the password rotation in invite-redeem.ts is
+  // the fix that does not depend on this write succeeding at all.
+  const { password: _password, ...sanitized } = record;
+  await fs.writeFile(`${file}.used`, JSON.stringify(sanitized), { mode: 0o660 }).catch(() => {});
 
   return { status: "ok", record };
 }

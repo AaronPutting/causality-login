@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.2.0 - 2026-11-07
+
+Phase 2b: closes the gap Phase 2's own invite mechanism opened, and removes the password
+path for guests entirely. See causality-auth `docs/STATUS-phase2.md` "2b" for the full test
+plan this tag is based on.
+
+Security fix: a redeemed invite's `.used` record kept the guest's real password in plain
+text (`src/lib/server/invite-store.ts`'s `claimInvite()` now strips the `password` field
+before writing the renamed file). Defense in depth on top of that:
+`src/lib/server/invite-redeem.ts` now also rotates the user's real Zitadel password to a
+fresh, never-stored, never-shown 22-character value (`burnInvitePassword()`, ~137 bits,
+built from all of upper/lower/digit/symbol) immediately after the session is confirmed, so
+even a record written before this fix, or a bug that reintroduces the field, cannot be used
+to sign in as the guest. `peekInvite()`/`claimInvite()` also now delete an expired record
+outright on read instead of just reporting it expired.
+
+No password path for guests: `src/lib/server/password-allowlist.ts` is a new, pure,
+non-"use server" helper reading `CAUSALITY_PASSWORD_LOGIN_ALLOWLIST` (comma-separated
+loginNames, case-insensitive). `src/lib/server/loginname.ts` routes every name not on it to
+a new `/new-device` page instead of the stock password screen, and
+`src/lib/server/password.ts`'s server action (`resetPassword`/`sendPassword`) checks the
+same allowlist independently, so a guest who reaches the stock `/password` URL directly
+(bypassing the routing decision entirely) still gets a generic "Could not verify password"
+with no real check against Zitadel. Confirmed live for both paths.
+
+New `/new-device` page (`src/app/(login)/new-device/`, `src/components/device-form.tsx`):
+shown to every non-allowlisted loginName with no session. Guest enters an email
+(autocomplete, pre-filled from `login_hint`/`loginName` when present), then sees a static
+result card ("This link works on one device... Ask Aaron for a new one") with no backend
+call between the two steps at all, so a known and an unknown email are provably
+indistinguishable by construction, not just by the copy. Built to slot in passkey and
+Google/Microsoft buttons later without restructuring.
+
+Branding: house font switched from stock Login V2's Lato to Inter
+(`src/app/(login)/layout.tsx`), matching every other Causality.bio surface. Colors,
+dark-background logo (new gold "Lab" wordmark) and dark icon are set through Zitadel's own
+branding policy, not app code — see causality-auth's changelog and `docs/STATUS-phase2.md`
+"2b" for that half.
+
+Known limitation, not addressed this release: the CSP in `src/lib/csp.ts` is stock upstream
+Login V2 (`'unsafe-inline' 'unsafe-eval'` in `script-src`), not strict in the CSP Level 3
+sense (no nonce/hash-based script-src). A real nonce-based rework would touch the whole
+stock app, including the password/MFA/passkey flows this project has deliberately left
+untouched, and was judged out of proportion for this phase.
+
 ## 0.1.1 - 2026-11-07
 
 Fixes the one-click flow 0.1.0 shipped with, confirmed broken by a live end-to-end browser

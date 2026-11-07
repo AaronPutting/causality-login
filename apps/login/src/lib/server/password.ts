@@ -34,6 +34,7 @@ import {
   checkUserVerification,
 } from "../verify-helper";
 import { getPublicHostWithProtocol } from "./host";
+import { isPasswordLoginAllowed } from "./password-allowlist";
 
 const logger = createLogger("password");
 
@@ -49,6 +50,15 @@ export async function resetPassword(command: ResetPasswordCommand) {
   const { serviceConfig } = getServiceConfig(_headers);
 
   const t = await getTranslations("password");
+
+  // Causality.bio: password login (and so password reset) is refused for every loginName
+  // except the console admin's -- every invited guest only ever authenticates through the
+  // one-click flow. Checked before anything else in this function, same generic error a
+  // real but non-matching lookup would produce, so this can't be used to tell a guest
+  // account apart from one that doesn't exist. See password-allowlist.ts.
+  if (!isPasswordLoginAllowed(command.loginName)) {
+    return { error: t("errors.couldNotSendResetLink") };
+  }
 
   // Get the original host that the user sees with protocol
   const hostWithProtocol = await getPublicHostWithProtocol(_headers);
@@ -151,6 +161,18 @@ export async function sendPassword(
   const t = await getTranslations("password");
 
   recordAuthAttempt("password", command.organization);
+
+  // Causality.bio: the one hard stop a guest can never route or POST around. No password
+  // check happens at all for a loginName not on the allowlist (in practice just the console
+  // admin) -- not "wrong password", not a session lookup, nothing that could distinguish a
+  // real guest account from a made-up loginName. src/lib/server/loginname.ts already never
+  // sends a non-admin user to this page in the first place; this is the second, independent
+  // enforcement for a direct request straight at this server action. See password-allowlist.ts
+  // and docs/STATUS-phase2.md "2b".
+  if (!isPasswordLoginAllowed(command.loginName)) {
+    recordAuthFailure("password", "not_allowlisted", command.organization);
+    return { error: t("errors.couldNotVerifyPassword") };
+  }
 
   let sessionCookie = await getSessionCookieByLoginName({
     loginName: command.loginName,

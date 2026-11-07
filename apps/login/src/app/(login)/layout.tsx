@@ -12,11 +12,16 @@ import { getAllowedLanguages } from "@/lib/zitadel";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
-import { Lato } from "next/font/google";
+import { Inter } from "next/font/google";
 import { headers } from "next/headers";
 import React, { Suspense } from "react";
 
-const lato = Lato({
+// Causality.bio house font (2026-11-07, docs/STATUS-phase2.md "2b"), replacing stock Login
+// V2's Lato -- matches every other Causality.bio surface (brand pack, lab-next, the main
+// site), all built on Inter. next/font/google still self-hosts the result (fetched once at
+// build time, served from this app's own origin afterward, same as Lato was) -- no runtime
+// request to fonts.googleapis.com either way, so this is a brand change, not a privacy one.
+const inter = Inter({
   weight: ["400", "700", "900"],
   subsets: ["latin"],
 });
@@ -43,7 +48,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   }
 
   return (
-    <html className={`${lato.className}`} suppressHydrationWarning>
+    <html className={`${inter.className}`} suppressHydrationWarning>
       <head />
       <body>
         <ThemeProvider>
