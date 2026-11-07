@@ -30,31 +30,32 @@
  * GHSA-3gwm-5wx8-4gm6, does not even apply here), which findValidSession() already accepts.
  * Re-read this whole comment before ever touching how this file authenticates a session.
  *
- * SECURITY (2026-11-07, docs/STATUS-phase2.md "2b"): right after confirming the session,
- * this file now also rotates the user's real Zitadel password to a fresh, immediately
- * discarded value (`burnInvitePassword`). The invite's password has no single-use concept of
- * its own the way the token does; without this, a password captured from anywhere (a backup,
- * a brief window before invite-store.ts's own redaction of the .used file lands) would go on
- * working indefinitely. This closes that off independent of invite-store.ts's fix -- the two
- * are deliberately both applied, not an either/or.
+ * SECURITY, rotation REMOVED (2026-11-07, docs/STATUS-phase2.md "2b"): this file briefly also
+ * rotated the user's real Zitadel password right after confirming the session
+ * (`burnInvitePassword`, same day). Real-world failure caught it: Aaron's own redemption left
+ * his session with factors = ['user'] only, no password factor, and oauth2-proxy's follow-up
+ * authorize round-trip (GET / -> /oauth2/auth 401 -> /oauth2/start?rd=/, a SECOND, separate
+ * OIDC request Login V2 re-validates via findValidSession()/isSessionValid() in
+ * src/lib/session.ts) landed back on a login screen instead of completing silently. Zitadel
+ * invalidates a session's verified password factor instance-wide the moment the user's
+ * password changes, not just for future sessions -- so the very call meant to protect this
+ * session broke the one-click redirect it was issued for. The check at this function's own
+ * `session.factors.password?.verifiedAt` above (right after CreateSession, before any
+ * rotation) always passed regardless, which is why earlier testing missed this: it validated
+ * the session at creation, never the later re-validation a real oauth2-proxy round trip forces.
+ * invite-store.ts's own redaction of the `.used` record (the password field stripped on
+ * write) is kept and is enough on its own: nobody ever learns the invite password's preimage
+ * once that file is rewritten, and password login for guests is refused server-side anyway
+ * (password-allowlist.ts). Do not reintroduce a post-redemption password change here.
  */
 
 import { addSessionToCookie } from "@/lib/cookies";
-import {
-  getSecuritySettings,
-  createSessionFromChecksAndChallenges,
-  getSession,
-  setUserPassword,
-} from "@/lib/zitadel";
+import { getSecuritySettings, createSessionFromChecksAndChallenges, getSession } from "@/lib/zitadel";
 import { getServiceConfig } from "@/lib/service-url";
 import { create, timestampMs, Duration } from "@zitadel/client";
 import { ChecksSchema } from "@zitadel/proto/zitadel/session/v2/session_service_pb";
-import { randomInt } from "crypto";
 import { headers } from "next/headers";
-import { createLogger } from "@/lib/logger";
 import { InviteRecord } from "./invite-store";
-
-const logger = createLogger("invite-redeem");
 
 // Independent of oauth2-proxy's access-token lifetime (300s, see causality-auth
 // docs/STATUS-pilot.md) -- that bounds how fast a revoke takes effect. This bounds how long
@@ -63,29 +64,6 @@ const logger = createLogger("invite-redeem");
 const SESSION_COOKIE_LIFETIME: Duration = { seconds: BigInt(24 * 60 * 60), nanos: 0 } as Duration;
 
 class InviteRedeemError extends Error {}
-
-const BURN_PASSWORD_ALPHABET =
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()-_=+";
-
-/**
- * Never surfaced anywhere, never stored, discarded the instant this call returns: its only
- * job is to make the invite's own password stop working the moment the guest's session is
- * confirmed. 22 characters from a 76-symbol alphabet (~137 bits of entropy, well over the
- * 128-bit target -- see tools/invite.py's own password generator for the matching target on
- * the invite side), categories satisfied by construction (retried until true), matching the
- * instance's password complexity policy rather than guessing at it.
- */
-function burnInvitePassword(): string {
-  while (true) {
-    let out = "";
-    for (let i = 0; i < 22; i++) {
-      out += BURN_PASSWORD_ALPHABET[randomInt(BURN_PASSWORD_ALPHABET.length)];
-    }
-    if (/[a-z]/.test(out) && /[A-Z]/.test(out) && /[0-9]/.test(out) && /[^A-Za-z0-9]/.test(out)) {
-      return out;
-    }
-  }
-}
 
 /** Returns the lab-next URL to redirect the browser to once the session cookie is set. */
 export async function completeInviteSession(record: InviteRecord): Promise<string> {
@@ -122,21 +100,6 @@ export async function completeInviteSession(record: InviteRecord): Promise<strin
 
   if (!session?.factors?.user?.loginName || !session.factors.password?.verifiedAt) {
     throw new InviteRedeemError("invite session is not authenticated after the password check");
-  }
-
-  // SECURITY: rotate now, before doing anything else -- see this file's top comment "2b".
-  // Best-effort and non-fatal: the session above is already good, the guest's one-click
-  // login must not fail just because this defense-in-depth call hit a transient error, and
-  // invite-store.ts's own redaction of the .used record does not depend on this succeeding
-  // either. Logged, not thrown.
-  try {
-    await setUserPassword({
-      serviceConfig,
-      userId: record.userId,
-      password: burnInvitePassword(),
-    });
-  } catch (error) {
-    logger.error("could not rotate invite password after redemption", { error });
   }
 
   const securitySettings = await getSecuritySettings({ serviceConfig });

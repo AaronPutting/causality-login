@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.2.3 - 2026-11-07
+
+Production bug, caught by Aaron's own real-world test: invite redemption left his browser on
+the Sign-in/new-device screen instead of the lab.
+
+`invite-redeem.ts` used to rotate the user's real Zitadel password to a fresh, discarded
+value right after confirming the session (defense in depth from "2b", belt-and-braces on top
+of `invite-store.ts` already stripping the password from the `.used` record). Zitadel
+invalidates a session's verified `password` factor instance-wide the moment the password
+changes -- not just for future sessions, but for the session that had just authenticated with
+it. oauth2-proxy's follow-up OIDC authorize round-trip re-validates the session
+(`findValidSession()`/`isSessionValid()`, `src/lib/session.ts`) and found only `factors.user`,
+so it fell back to a login screen instead of completing silently. Removed the rotation
+entirely. `invite-store.ts`'s existing redaction of the `.used` record is kept and is enough
+on its own: nobody learns the invite password's preimage once that file is rewritten, and
+guest password login is refused server-side anyway (`password-allowlist.ts`). Also removed
+the now-unused `burnInvitePassword()` helper and its imports, and corrected
+`causality-auth/tools/invite.py`'s docstring, which still described the rotation.
+
+Why earlier testing missed this: `invite-redeem.ts`'s own check
+(`session.factors.password?.verifiedAt`) runs right after `createSessionFromChecksAndChallenges`,
+before the rotation call, so it always passed. The full end-to-end browser flow (Phase 2 test
+item 1) was not re-run after "2b" introduced the rotation; see `docs/STATUS-phase2.md` item 9.
+
 ## 0.2.2 - 2026-11-07
 
 Two fixes from a second coordinator review of the 0.2.1 screenshots.
