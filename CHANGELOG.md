@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.2.2 - 2026-11-07
+
+Two fixes from a second coordinator review of the 0.2.1 screenshots.
+
+Invite-landing button not full width: `go/page.tsx` wrapped the Continue button in a plain
+`<form action={redeemInvite}>`, which is not a flex container, so the inline-flex `Button`
+sized to its own content instead of stretching -- added `className="flex w-full flex-col"`
+to that form, the same pattern `device-form.tsx`'s form already used correctly.
+
+The real `/sampling` redirect (a genuine OIDC `requestId`) showed Zitadel's own stock
+"Welcome back! / Enter your login details. / Loginname" copy instead of Causality's
+guest-friendly "Sign in / Enter the email your invite was sent to. / Email", even though
+`locales/en.json` already had the right text and a page hit without a resolvable org
+context rendered it fine. Root cause: `i18n/request.ts` merges three message sources with
+the last one winning, and the last one, Zitadel's own `getHostedLoginTranslation` API,
+ships its own factory-default English copy for every key in the `loginname` namespace --
+nothing here ever asked Zitadel to customize that text, so its stock defaults silently beat
+the app's own locale file on any request that resolves a real org (i.e. every real login).
+Fixed by dropping the `loginname` key from that hosted-translation payload before the merge
+in `i18n/request.ts`, so our own copy is authoritative there while every other namespace
+still takes a live Zitadel-side override exactly as before. `components/username-form.tsx`
+(the component this page renders) also lost its Back button and switched its input to
+`autoComplete="email"`, and its submit button is now a direct flex-column child instead of
+being pinned `self-end` in a row next to Back, so it is full width like every other Continue
+button in the app.
+
+Live walk confirmed end to end: `/sampling` unauthenticated to `/loginname` ("Sign in",
+full-width Continue) to `/new-device` (email pre-filled, green Continue) to the "This link
+works on one device" result card.
+
 ## 0.2.1 - 2026-11-07
 
 Polish pass before showing Aaron (coordinator review of the 0.2.0 screenshots). No

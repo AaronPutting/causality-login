@@ -64,7 +64,7 @@ export default async function Page(props: { searchParams: Promise<Record<string,
             <p className="ztdl-p text-center">Aaron shared a page with you.</p>
             <p className="ztdl-p text-center">{peeked.record.email}</p>
           </div>
-          <form action={redeemInvite}>
+          <form action={redeemInvite} className="flex w-full flex-col">
             <input type="hidden" name="token" value={token} />
             <Button type="submit" size={ButtonSizes.Large}>
               Continue as {peeked.record.name || peeked.record.email}

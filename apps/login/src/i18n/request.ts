@@ -69,6 +69,18 @@ export default getRequestConfig(async () => {
 
   const customMessages = translations;
 
+  // Zitadel's own hosted-login-translation API ships factory-default English copy for
+  // "loginname" (title/description/labels), and it is merged in last below, so it silently
+  // outranks locales/en.json. Confirmed live 2026-11-07 ("2b" polish pass): the real OIDC
+  // requestId path resolves this instance-level translation and reverts the guest-friendly
+  // "Sign in" / "Enter the email your invite was sent to." copy back to stock "Welcome back!".
+  // Nothing here has ever deliberately configured a hosted override for this namespace, so drop
+  // it before merging rather than let a Zitadel factory default beat an app file we maintain on
+  // purpose. Every other namespace still takes a live hosted override exactly as before.
+  if (customMessages && typeof customMessages === "object" && "loginname" in customMessages) {
+    delete (customMessages as Record<string, unknown>).loginname;
+  }
+
   // Load locale messages, fall back to default language messages if locale not found
   let localeMessages;
   try {

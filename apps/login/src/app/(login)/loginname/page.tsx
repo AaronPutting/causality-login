@@ -56,7 +56,7 @@ export default async function Page(props: { searchParams: Promise<Record<string 
         <h1>
           <Translated i18nKey="title" namespace="loginname" />
         </h1>
-        <p className="ztdl-p">
+        <p className="ztdl-p text-center">
           <Translated i18nKey="description" namespace="loginname" />
         </p>
       </div>
