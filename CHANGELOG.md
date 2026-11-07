@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.1.1 - 2026-11-07
+
+Fixes the one-click flow 0.1.0 shipped with, confirmed broken by a live end-to-end browser
+test (not just the raw Session API, which is all the 0.1.0 "Step A" spike had checked): every
+guest landed on Login V2's own `/accounts` picker instead of the target lab page. Root cause:
+this app's own `session.ts` (`isSessionValid`/`hasVerifiedPrimaryFactor`, stock, unmodified)
+only ever treats `password`, a user-verified passkey, or an IDP intent as a qualifying primary
+factor for silently completing a *new* OIDC request. `otpEmail` is deliberately excluded there
+regardless of what the raw Session API itself accepts.
+
+`invite-redeem.ts` now creates the session with a `password` check instead, against a fresh,
+random password `tools/invite.py` sets on the invited user at invite time (never shown to or
+typed by anyone, rotates on every new invite). Confirmed live: a guest now lands directly on
+the target lab-next page with zero intermediate screens. See `invite-redeem.ts`'s top comment
+and causality-auth `docs/STATUS-phase2.md` "Step A" for the full story.
+
+A user ever put through the 0.1.0 `otpEmail` flow ends up with
+`AUTHENTICATION_METHOD_TYPE_OTP_EMAIL` permanently registered on them (Zitadel auto-registers
+it on first verified use), which then makes `session.ts`'s MFA gate mandatory for that user
+even under this fix. Remove it per-user with `DELETE /v2/users/{id}/otp_email` before
+re-testing such a user.
+
 ## 0.1.0 - 2026-11-07
 
 First release: a fork of `zitadel/zitadel`'s `apps/login` (tag `v4.20.1`, matching the
