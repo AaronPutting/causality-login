@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.2.1 - 2026-11-07
+
+Polish pass before showing Aaron (coordinator review of the 0.2.0 screenshots). No
+behaviour change, UI only.
+
+Removed the language dropdown from `(login)/layout.tsx` -- English only, it looked
+misplaced next to the theme switch. Centred every button label: `components/button.tsx`
+had `inline-flex items-center` but no `justify-content`, so text defaulted to flex-start
+inside the already-full-width button. Centred body text in the short status cards
+(invite, used, expired, not found, error, new-device result, sign-in intro) by adding
+`text-center` at each call site -- `DynamicTheme` only auto-centers when it receives two
+children, and `go/page.tsx`/`device-form.tsx` both pass one, so none of this was
+automatic.
+
+Invite landing (`go/page.tsx`): button now reads "Continue as &lt;name&gt;" (or the email
+when no name is known) on one line, with the email shown as its own muted centered line
+above the button instead of inside it.
+
+Logo (`components/logo.tsx`): dropped the fixed `height={150} width={150}` HTML
+attributes in favour of `w-[170px] sm:w-[220px] h-auto`, so it renders about 220px wide
+on desktop and scales down on phones using the SVG's own aspect ratio instead of a
+disconnected fixed box.
+
+Card padding (`components/dynamic-theme.tsx`): removed an always-empty trailing
+`<div className="flex flex-row justify-between"></div>` from the top-to-bottom layout
+branch. It added a `space-y-8` gap before nothing, which is why these cards had visibly
+more empty space at the bottom than the top.
+
+`aaron@causality.bio` is now a real `mailto:` link everywhere it appears (used, expired,
+not found, error, invite-gone states, new-device result), styled `text-[#4AB349]
+hover:underline` to match the brand green.
+
 ## 0.2.0 - 2026-11-07
 
 Phase 2b: closes the gap Phase 2's own invite mechanism opened, and removes the password

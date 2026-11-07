@@ -57,12 +57,7 @@ export function DynamicTheme({
                       <div className="mx-auto max-w-[440px] space-y-8">
                         {/* Logo and branding */}
                         {branding && (
-                          <Logo
-                            lightSrc={branding.lightTheme?.logoUrl}
-                            darkSrc={branding.darkTheme?.logoUrl}
-                            height={150}
-                            width={150}
-                          />
+                          <Logo lightSrc={branding.lightTheme?.logoUrl} darkSrc={branding.darkTheme?.logoUrl} />
                         )}
 
                         {/* First child content (title, description) - only if we have left/right structure */}
@@ -101,12 +96,7 @@ export function DynamicTheme({
                   <div className="mx-auto flex flex-col items-center space-y-8">
                     <div className="relative flex flex-row items-center justify-center">
                       {branding && (
-                        <Logo
-                          lightSrc={branding.lightTheme?.logoUrl}
-                          darkSrc={branding.darkTheme?.logoUrl}
-                          height={150}
-                          width={150}
-                        />
+                        <Logo lightSrc={branding.lightTheme?.logoUrl} darkSrc={branding.darkTheme?.logoUrl} />
                       )}
                     </div>
 
@@ -122,8 +112,6 @@ export function DynamicTheme({
                       // Single child - use original behavior
                       <div className="w-full">{actualChildren}</div>
                     )}
-
-                    <div className="flex flex-row justify-between"></div>
                   </div>
                 </Card>
               </div>

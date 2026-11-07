@@ -30,9 +30,9 @@ export function DeviceForm({ defaultEmail }: { defaultEmail: string }) {
     return (
       <div className="flex flex-col space-y-4">
         <h1>This link works on one device</h1>
-        <p className="ztdl-p">
+        <p className="ztdl-p text-center">
           Your invite link only works on the device and browser it was opened on the first time. Ask Aaron for a new
-          one: <a href={`mailto:${ASK_AARON}`}>{ASK_AARON}</a>.
+          one: <a href={`mailto:${ASK_AARON}`} className="text-[#4AB349] hover:underline">{ASK_AARON}</a>.
         </p>
       </div>
     );
@@ -42,7 +42,7 @@ export function DeviceForm({ defaultEmail }: { defaultEmail: string }) {
     <div className="flex flex-col space-y-6">
       <div className="flex flex-col space-y-4">
         <h1>Sign in</h1>
-        <p className="ztdl-p">Enter the email your invite was sent to.</p>
+        <p className="ztdl-p text-center">Enter the email your invite was sent to.</p>
       </div>
       <form
         onSubmit={(e) => {
