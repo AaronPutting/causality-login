@@ -6,7 +6,6 @@
  * token is in the query string and whether it has already been claimed.
  */
 
-import { Button, ButtonSizes } from "@/components/button";
 import { DynamicTheme } from "@/components/dynamic-theme";
 import { getServiceConfig } from "@/lib/service-url";
 import { peekInvite } from "@/lib/server/invite-store";
@@ -15,6 +14,7 @@ import { Metadata } from "next";
 import { headers } from "next/headers";
 import { ReactNode } from "react";
 import { redeemInvite } from "./actions";
+import { InviteSubmitButton } from "./invite-submit-button";
 
 export const dynamic = "force-dynamic";
 export const revalidate = false;
@@ -66,9 +66,7 @@ export default async function Page(props: { searchParams: Promise<Record<string,
           </div>
           <form action={redeemInvite} className="flex w-full flex-col">
             <input type="hidden" name="token" value={token} />
-            <Button type="submit" size={ButtonSizes.Large}>
-              Continue as {peeked.record.name || peeked.record.email}
-            </Button>
+            <InviteSubmitButton>Continue as {peeked.record.name || peeked.record.email}</InviteSubmitButton>
           </form>
         </div>
       ) : peeked.status === "used" ? (

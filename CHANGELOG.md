@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.4 - 2026-11-07
+
+Instant feedback on the two submit buttons Aaron actually clicks, after his own test showed
+a visible gap between clicking Continue and anything happening (invite redemption's password
+check plus the oauth2-proxy redirect chain take close to 2.5s together -- see
+`causality-auth` docs/STATUS-phase2.md "2c" for the measured hops).
+
+`go/invite-submit-button.tsx` (new): wraps the invite landing page's Continue button in a
+client component using `useFormStatus` (same pattern `idps/base-button.tsx` already used for
+the IDP buttons) -- on submit it disables immediately, shows the existing `Spinner`, and
+swaps its label to "Opening the page...". `go/page.tsx` now renders this instead of a bare
+`Button`. `username-form.tsx`'s sign-in Continue button already disabled and spun on submit
+(`loading` state); it was just missing a label change -- now shows "One moment..." while
+`loading` is true. Neither button could double-submit before this (`disabled` was already
+wired); this only adds the visible feedback.
+
 ## 0.2.3 - 2026-11-07
 
 Production bug, caught by Aaron's own real-world test: invite redemption left his browser on
