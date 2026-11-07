@@ -5,10 +5,15 @@
  *
  * Record format is a tiny shared contract with causality-auth's tools/invite.py (a different
  * repo, a different language, writing the same directory): one JSON file per invite, named
- * `sha256(token).json`, holding everything needed to complete the session EXCEPT the token
- * itself -- knowing the raw token is exactly what lets a caller compute the right filename, so
- * nothing is gained by also storing it inside the file, and it means this directory never
- * holds a plaintext bearer credential even if it ends up in a backup.
+ * `sha256(token).json`, holding everything needed to complete the session. The record DOES
+ * include a `password` field (see below) -- the one piece of per-invite secret state this
+ * directory holds -- but that is no new exposure: whoever already has the raw token (needed
+ * to compute the filename in the first place) can fully authenticate as this user regardless,
+ * so the password field is equivalent in sensitivity to the token itself, not an additional
+ * credential beyond it. `tools/invite.py` sets this password on the user at invite time
+ * (never shown to, or typed by, the guest; it exists purely so this file's `password` check
+ * produces a session factor Login V2's own stock code recognizes as primary -- see
+ * invite-redeem.ts's top comment for why).
  *
  * Single-use is enforced with `fs.rename` to a `.used` sibling: rename is atomic on the same
  * filesystem, so two concurrent redemptions (a double click, a retried POST) can never both
@@ -17,10 +22,10 @@
  * The directory (CAUSALITY_INVITE_STORE_DIR, bind-mounted from the host) is created world
  * read/write/execute (0777) by run.sh: tools/invite.py runs directly on the host as `aaron`,
  * this container runs as `nextjs` (uid 1001), and `rename`/`unlink` permission comes from the
- * *directory's* write bit, not the file's own owner or mode. The records themselves carry no
- * secret (email, name, target page, timestamps only), so a world-writable directory is an
- * acceptable, deliberate tradeoff for a pilot-scale, single-host setup -- not a pattern to
- * reuse for anything that holds a credential.
+ * *directory's* write bit, not the file's own owner or mode. That tradeoff (a world-writable
+ * directory) is acceptable for a pilot-scale, single-host setup given the records' contents
+ * are no more sensitive than the token already is -- not a pattern to reuse for a directory
+ * holding an independent credential.
  */
 
 import { createHash } from "crypto";
@@ -34,6 +39,7 @@ export type InviteRecord = {
   email: string;
   name: string;
   page: string;
+  password: string;
   createdAt: string; // ISO
   expiresAt: string; // ISO
 };

@@ -1,32 +1,42 @@
 "use server";
 
 /**
- * Completes a one-click invite: creates a Zitadel session authenticated by an email-OTP
- * factor whose code this server generates and consumes itself (never shown to the browser,
- * never mailed -- there is no SMTP anywhere in this stack), then writes Login V2's own
+ * Completes a one-click invite: creates a Zitadel session authenticated by a `password`
+ * check against a random, never-disclosed password `causality-auth/tools/invite.py` set on
+ * this user at invite time (the guest never sees it, never types it -- see invite-store.ts
+ * for why storing it in the invite record is not a new exposure), then writes Login V2's own
  * `sessions` cookie exactly as `createSessionAndUpdateCookie` (src/lib/server/cookie.ts)
  * would. That cookie is all `src/app/login/route.ts` needs to recognize the browser on the
- * very next OIDC authorize redirect and finish it via CreateCallback with zero further
- * screens -- see causality-auth docs/STATUS-phase2.md "Step A" for why that's true.
+ * very next OIDC authorize redirect and finish it via its own existing CreateCallback call
+ * with zero further screens -- see causality-auth docs/STATUS-phase2.md "Step A".
  *
- * This deliberately does NOT go through createSessionFromChecksAndChallenges's usual caller
- * (src/lib/server/session.ts / cookie.ts), because those run every challenge through
- * sanitizeChallenges (src/lib/server/challenges.ts), which rewrites otp_email's returnCode to
- * sendCode on purpose (GHSA-3gwm-5wx8-4gm6: a returnCode hands the OTP back in the response,
- * which is only safe when the caller constructing the challenge is trusted, not an untrusted
- * browser). Here the challenge is 100% server-constructed -- the only input from the browser
- * is our own single-use, high-entropy, already-claimed invite token -- so returnCode is the
- * correct and safe choice, and reusing the sanitized path would silently break this flow
- * (Zitadel would try to email the code through a stack with no SMTP configured, see
- * causality-auth/CLAUDE.md "No SMTP, ever").
+ * Why a password check, not an otpEmail challenge (this file's first version): confirmed
+ * live 2026-11-07, against the real running stack, not guessed. An otpEmail-only session
+ * DOES fully authenticate at the raw Session API level, and CreateCallback DOES accept it
+ * directly (that is exactly the Step A spike's result). But the stock flow-initiation this
+ * design deliberately reuses unmodified -- src/lib/server/flow-initiation.ts calling
+ * findValidSession() / isSessionValid() in src/lib/session.ts -- imposes its OWN, stricter
+ * definition of "a session worth silently completing a *new* OIDC request for", one that
+ * only ever counts `password`, a user-verified `passkey`, or an `IDP intent` as a qualifying
+ * primary factor (hasVerifiedPrimaryFactor, same file, also shared with the
+ * credential-enrollment guard, GHSA-45f2-5q3r-xgg6 -- not a check to route around lightly).
+ * otpEmail is deliberately excluded there: it is Zitadel's idea of a *second* factor, not a
+ * standalone sign-in method, regardless of what the raw Session API will accept. A live
+ * end-to-end browser test with the otpEmail version landed every guest on Login V2's own
+ * /accounts picker instead of the lab page -- a real break of the one-click goal, not a
+ * cosmetic issue -- because findValidSession() never selected that session. A `password`
+ * check sets factors.password.verifiedAt in a single CreateSession call (no challenge/verify
+ * round trip needed at all, and -- since there is no challenge object in this request --
+ * sanitizeChallenges's otp_email-specific rewrite, src/lib/server/challenges.ts,
+ * GHSA-3gwm-5wx8-4gm6, does not even apply here), which findValidSession() already accepts.
+ * Re-read this whole comment before ever touching how this file authenticates a session.
  */
 
 import { addSessionToCookie } from "@/lib/cookies";
-import { getSecuritySettings, createSessionFromChecksAndChallenges, setSession, getSession } from "@/lib/zitadel";
+import { getSecuritySettings, createSessionFromChecksAndChallenges, getSession } from "@/lib/zitadel";
 import { getServiceConfig } from "@/lib/service-url";
 import { create, timestampMs, Duration } from "@zitadel/client";
 import { ChecksSchema } from "@zitadel/proto/zitadel/session/v2/session_service_pb";
-import { RequestChallengesSchema, RequestChallenges_OTPEmail_ReturnCodeSchema } from "@zitadel/proto/zitadel/session/v2/challenge_pb";
 import { headers } from "next/headers";
 import { InviteRecord } from "./invite-store";
 
@@ -45,47 +55,34 @@ export async function completeInviteSession(record: InviteRecord): Promise<strin
 
   const checks = create(ChecksSchema, {
     user: { search: { case: "userId", value: record.userId } },
-  });
-  const challenges = create(RequestChallengesSchema, {
-    otpEmail: {
-      deliveryType: { case: "returnCode", value: create(RequestChallenges_OTPEmail_ReturnCodeSchema, {}) },
-    },
+    password: { password: record.password },
   });
 
   const created = await createSessionFromChecksAndChallenges({
     serviceConfig,
     checks,
-    challenges,
-    lifetime: SESSION_COOKIE_LIFETIME,
-  });
-
-  const code = created.challenges?.otpEmail;
-  if (!created.sessionId || !created.sessionToken || !code) {
-    throw new InviteRedeemError("Zitadel did not return an otpEmail returnCode for the invite session");
-  }
-
-  const verifyChecks = create(ChecksSchema, { otpEmail: { code } });
-  const updated = await setSession({
-    serviceConfig,
-    sessionId: created.sessionId,
-    sessionToken: created.sessionToken,
-    checks: verifyChecks,
     challenges: undefined,
     lifetime: SESSION_COOKIE_LIFETIME,
   });
 
-  if (!updated?.sessionToken) {
-    throw new InviteRedeemError("otpEmail check did not verify the invite session");
+  if (!created.sessionId || !created.sessionToken) {
+    // Most likely cause: tools/invite.py was run again for the same email after this token
+    // was minted but before it was redeemed, which rotates the user's password and leaves
+    // this older token's stored password stale (Zitadel returns COMMAND-3M0fs, "invalid
+    // credentials"). The newest invite link for a given guest is the one that works; this
+    // is the same trade-off a password-reset-by-mail flow has (only the latest link is
+    // live), just enforced by the password check instead of a separate revocation list.
+    throw new InviteRedeemError("Zitadel did not create a session for the invite (bad or superseded password)");
   }
 
   const { session } = await getSession({
     serviceConfig,
     sessionId: created.sessionId,
-    sessionToken: updated.sessionToken,
+    sessionToken: created.sessionToken,
   });
 
-  if (!session?.factors?.user?.loginName || !session.factors.otpEmail?.verifiedAt) {
-    throw new InviteRedeemError("invite session is not authenticated after the otpEmail check");
+  if (!session?.factors?.user?.loginName || !session.factors.password?.verifiedAt) {
+    throw new InviteRedeemError("invite session is not authenticated after the password check");
   }
 
   const securitySettings = await getSecuritySettings({ serviceConfig });
@@ -94,7 +91,7 @@ export async function completeInviteSession(record: InviteRecord): Promise<strin
   await addSessionToCookie({
     session: {
       id: created.sessionId,
-      token: updated.sessionToken,
+      token: created.sessionToken,
       loginName: session.factors.user.loginName,
       organization: session.factors.user.organizationId,
       creationTs: session.creationDate ? `${timestampMs(session.creationDate)}` : "",
