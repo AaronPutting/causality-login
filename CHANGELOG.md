@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.2.7 - 2026-11-09
+
+Fixes a guest-visible crash: a revoked or deactivated invite link landed on a raw,
+unstyled "Minified React error #441" page instead of the calm "link not found" family of
+pages (found in the causality-auth security/ops/ux review, `revoked-link-react-error-441.png`).
+
+Two separate bugs, both fixed. (1) `completeInviteSession` (`invite-redeem.ts`) already
+caught the Zitadel `Errors.User.NotActive` failure for a deactivated guest and redirected
+to a friendly page, but routed it through the same generic "something went wrong" copy as
+every other failure; it now gets its own "Link no longer valid" page (`isInactiveUserError`,
+`go/actions.ts`, `go/page.tsx`), styled like the existing "Already used"/"Link not found"
+pages. (2) The actual crash: `go/page.tsx` calls `getBrandingSettings` unconditionally on
+every render, and `lib/zitadel.ts`'s settings fetchers (`getBrandingSettings`,
+`getSecuritySettings`, `getLoginSettings`, ...) correctly return `undefined` when Zitadel
+has nothing configured for the org/instance -- but `freshCache`'s underlying cache
+(`PromiseCache`/lru-cache's `forceFetch`) treats a fetcher resolving to `undefined` as a
+*failed* fetch and throws `Error("fetch() returned undefined")`, uncaught, crashing the
+whole Server Component render. `lib/server/security-settings.ts` had already hit and fixed
+this exact trap for its own, separate settings call (see its comment); `freshCache` now
+fixes it centrally for every settings fetcher in `zitadel.ts` instead of relying on each
+caller to remember the workaround. `go/page.tsx` also now wraps `getBrandingSettings` and
+`peekInvite` defensively (branding is cosmetic and optional; a filesystem hiccup on
+`peekInvite` should never crash the page either), and a new `go/error.tsx` route-level
+error boundary gives any remaining uncaught error in this route a calm, on-brand dead end
+instead of the shared `(login)/error.tsx` debug box with a "Try Again" button that just
+re-threw the same error.
+
 ## 0.2.6 - 2026-11-09
 
 One-click invites can now land on `lab.causality.bio`, not just `lab-next`. Since about

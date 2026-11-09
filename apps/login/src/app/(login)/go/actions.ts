@@ -14,6 +14,7 @@ import { redirect } from "next/navigation";
 import { createLogger } from "@/lib/logger";
 import { claimInvite } from "@/lib/server/invite-store";
 import { completeInviteSession } from "@/lib/server/invite-redeem";
+import { isInactiveUserError } from "@/lib/server/invite-errors";
 
 const logger = createLogger("invite-go");
 
@@ -33,7 +34,11 @@ export async function redeemInvite(formData: FormData): Promise<void> {
     // here is not retryable with the same link -- it needs a fresh one from Aaron, same as
     // an expired or already-used link. Logged, not shown: the guest never sees a stack trace.
     logger.error("invite redemption failed after the token was claimed", { error });
-    redirect(`/go?token=${encodeURIComponent(token)}&outcome=error`);
+    // A deactivated/revoked guest (share-api's do_deactivate, tools/invite.py --revoke, or
+    // a manual Zitadel console removal) gets its own calm "no longer valid" copy instead of
+    // the generic "something went wrong" page -- see go/page.tsx's "revoked" branch.
+    const outcome = isInactiveUserError(error) ? "revoked" : "error";
+    redirect(`/go?token=${encodeURIComponent(token)}&outcome=${outcome}`);
   }
 
   redirect(target);

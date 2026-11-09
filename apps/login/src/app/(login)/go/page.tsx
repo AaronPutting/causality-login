@@ -7,6 +7,7 @@
  */
 
 import { DynamicTheme } from "@/components/dynamic-theme";
+import { createLogger } from "@/lib/logger";
 import { getServiceConfig } from "@/lib/service-url";
 import { peekInvite } from "@/lib/server/invite-store";
 import { getBrandingSettings } from "@/lib/zitadel";
@@ -15,6 +16,8 @@ import { headers } from "next/headers";
 import { ReactNode } from "react";
 import { redeemInvite } from "./actions";
 import { InviteSubmitButton } from "./invite-submit-button";
+
+const logger = createLogger("invite-go-page");
 
 export const dynamic = "force-dynamic";
 export const revalidate = false;
@@ -48,12 +51,43 @@ export default async function Page(props: { searchParams: Promise<Record<string,
   const searchParams = await props.searchParams;
   const token = typeof searchParams.token === "string" ? searchParams.token : "";
   const forcedError = searchParams.outcome === "error";
+  const forcedRevoked = searchParams.outcome === "revoked";
 
   const _headers = await headers();
   const { serviceConfig } = getServiceConfig(_headers);
-  const branding = await getBrandingSettings({ serviceConfig });
 
-  const peeked = forcedError ? ({ status: "error" } as const) : await peekInvite(token);
+  // Branding is cosmetic (logo/colors; DynamicTheme and ThemeWrapper both already treat it
+  // as optional). Never let a transient settings-API hiccup take down the whole landing
+  // page over it -- this guest may already be looking at the "link no longer valid" or
+  // "already used" copy below, which must render regardless. See zitadel.ts's freshCache
+  // for the specific bug this used to hit unguarded (CHANGELOG 0.2.7).
+  let branding;
+  try {
+    branding = await getBrandingSettings({ serviceConfig });
+  } catch (error) {
+    logger.error("failed to load branding settings for the invite landing page", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    branding = undefined;
+  }
+
+  // Defense in depth: peekInvite only touches the local filesystem and shouldn't normally
+  // throw, but a surprise here (disk hiccup, permissions) must still land on the calm
+  // "something went wrong" copy below, never on the route's raw error boundary (go/error.tsx).
+  async function safePeek() {
+    try {
+      return await peekInvite(token);
+    } catch (error) {
+      logger.error("failed to look up the invite record", { error: error instanceof Error ? error.message : String(error) });
+      return { status: "error" } as const;
+    }
+  }
+
+  const peeked = forcedRevoked
+    ? ({ status: "revoked" } as const)
+    : forcedError
+      ? ({ status: "error" } as const)
+      : await safePeek();
 
   return (
     <DynamicTheme branding={branding}>
@@ -84,6 +118,15 @@ export default async function Page(props: { searchParams: Promise<Record<string,
           body={
             <>
               This link expired. Ask Aaron for a new one: <AaronMailLink />
+            </>
+          }
+        />
+      ) : peeked.status === "revoked" ? (
+        <Gone
+          heading="Link no longer valid"
+          body={
+            <>
+              This link is no longer valid. Ask Aaron for a new one: <AaronMailLink />
             </>
           }
         />

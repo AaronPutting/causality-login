@@ -91,7 +91,27 @@ function freshCache<T>(key: string, fetcher: () => Promise<T>, ttlMs: number): P
     return fetcher();
   }
 
-  return promiseCache.getOrFetch(key, fetcher, ttlMs);
+  // BUG (found 2026-11-09, causality-auth review): several fetchers above
+  // (getBrandingSettings, getSecuritySettings, getLoginSettings, getLockoutSettings,
+  // getPasswordExpirySettings, ...) legitimately resolve to `undefined` -- their own
+  // `.then((resp) => (resp.settings ? resp.settings : undefined))` is the established,
+  // correct way to say "Zitadel has nothing configured for this org/instance", and every
+  // caller already treats that `undefined` as a normal, optional result (e.g.
+  // `securitySettings?.embeddedIframe?.enabled`, `DynamicTheme`'s `branding?:`). But
+  // lru-cache's `forceFetch` (used by PromiseCache.getOrFetch) treats a fetcher resolving
+  // to `undefined` as a *failed* fetch and throws `Error("fetch() returned undefined")` --
+  // uncaught here, that crashed the whole Server Component render (observed on
+  // apps/login's (login)/go/page.tsx -> getBrandingSettings, surfaced to the guest as a raw
+  // "Minified React error #441" with no way forward, see CHANGELOG 0.2.7). The exact same
+  // trap is already documented and avoided in lib/server/security-settings.ts ("Return null
+  // instead of undefined"); fixing it once here, centrally, covers every settings fetcher
+  // instead of relying on each one to remember the workaround.
+  return promiseCache.getOrFetch(key, fetcher, ttlMs).catch((err: unknown) => {
+    if (err instanceof Error && err.message === "fetch() returned undefined") {
+      return undefined as T;
+    }
+    throw err;
+  });
 }
 
 export async function getHostedLoginTranslation({
