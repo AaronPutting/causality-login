@@ -48,6 +48,12 @@ export type InviteRecord = {
   email: string;
   name: string;
   page: string;
+  // Which deployed site this invite redirects to once redeemed, e.g. "lab" or "lab-next".
+  // Optional for backward compatibility with records written before this field existed, and
+  // because tools/invite.py's own --site flag defaults it on write anyway. invite-redeem.ts
+  // maps it through a fixed allow list and treats a missing or unrecognized value as "lab",
+  // never as an open redirect -- see that file's SITE_ORIGINS.
+  site?: string;
   password: string;
   createdAt: string; // ISO
   expiresAt: string; // ISO

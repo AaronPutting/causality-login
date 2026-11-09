@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.6 - 2026-11-09
+
+One-click invites can now land on `lab.causality.bio`, not just `lab-next`. Since about
+15:40 UTC today `lab.causality.bio` itself runs on this same Zitadel/oauth2-proxy stack
+(`causality-lab` v0.6.1, `run-oidc.sh`), so this is the first invite redemption had anywhere
+to go other than staging.
+
+`InviteRecord` (`invite-store.ts`) gets an optional `site` field. `invite-redeem.ts`'s
+`completeInviteSession` maps it through a fixed `SITE_ORIGINS` allow list (`{lab:
+"https://lab.causality.bio", "lab-next": "https://lab-next.causality.bio"}`) rather than
+building the redirect origin out of the stored string directly -- same reasoning as the
+existing `page` check right next to it: a record is written by a different repo
+(`causality-auth/tools/invite.py`, soon also `share-api/server.py`), so the one place that
+turns an arbitrary field into an actual redirect target stays a closed set. A missing or
+unrecognized `site` defaults to `"lab"` (previously `lab-next` was the only option, hardcoded
+-- this flips the default now that `lab` is the real target and `lab-next` goes back to being
+the one callers have to ask for explicitly).
+
 ## 0.2.5 - 2026-11-09
 
 Publication prep, ahead of this repo going public (AGPL, see README "AGPL note"), plus two

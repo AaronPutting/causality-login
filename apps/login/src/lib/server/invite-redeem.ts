@@ -63,9 +63,23 @@ import { InviteRecord } from "./invite-store";
 // same default every other stock session in this app uses (src/lib/server/session.ts).
 const SESSION_COOKIE_LIFETIME: Duration = { seconds: BigInt(24 * 60 * 60), nanos: 0 } as Duration;
 
+// Fixed allow list, not a template string built from record.site: a record is written by
+// tools/invite.py (or share-api/server.py, a separate repo/language each) and this is the
+// one place that turns an arbitrary string field into an actual redirect origin, so it stays
+// a closed set on purpose -- no open-redirect vector, same reasoning as the page check below.
+// lab.causality.bio went live on our own Zitadel/oauth2-proxy stack 2026-11-09 (see
+// causality-auth docs/STATUS-pilot.md); lab-next stays the staging target it always was.
+const SITE_ORIGINS: Record<string, string> = {
+  lab: "https://lab.causality.bio",
+  "lab-next": "https://lab-next.causality.bio",
+};
+const DEFAULT_SITE = "lab";
+
 class InviteRedeemError extends Error {}
 
-/** Returns the lab-next URL to redirect the browser to once the session cookie is set. */
+/** Returns the URL to redirect the browser to once the session cookie is set, on whichever
+ * site the invite named (record.site, defaulting to "lab" for a missing or unrecognized
+ * value -- see SITE_ORIGINS above). */
 export async function completeInviteSession(record: InviteRecord): Promise<string> {
   const _headers = await headers();
   const { serviceConfig } = getServiceConfig(_headers);
@@ -124,5 +138,6 @@ export async function completeInviteSession(record: InviteRecord): Promise<strin
   // producing a confusing destination. Validated more strictly at write time in
   // tools/invite.py; this is a second, independent check, not the only one.
   const page = record.page && record.page.startsWith("/") && !record.page.startsWith("//") ? record.page : "/";
-  return `https://lab-next.causality.bio${page}`;
+  const origin = (record.site && SITE_ORIGINS[record.site]) || SITE_ORIGINS[DEFAULT_SITE];
+  return `${origin}${page}`;
 }
