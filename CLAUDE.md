@@ -17,9 +17,10 @@ is deployed together with `causality-auth` (a separate repo) and shares its rule
 - **Every release is versioned**: `VERSION`, `CHANGELOG.md`, tag `v<version>`, pushed. The
   image built from it is tagged to match (`causality-login:<version>`) and pinned (never
   `:latest`) in `causality-auth/docker-compose.yml`.
-- **Private repo.** AGPL requires offering modified source once outside people use the app
-  over a network -- see README "AGPL note". Aaron decides when to make this public; default
-  is private.
+- **Repo visibility.** AGPL requires offering modified source once outside people use the
+  app over a network -- see README "AGPL note". Aaron decided (2026-11-09) this repo goes
+  public for that reason; he flips GitHub visibility himself after reading a secrets/history
+  scan, never as a side effect of some other change here.
 - **This repo and whatever's built from it on the Keller are the only copies.** No CI.
 - Keep `NEXT_PUBLIC_AUTO_SUBMIT_CODE=false` (protects the stock invite/code screens from a
   mail scanner's prefetch GET) unless Aaron explicitly asks to change it.

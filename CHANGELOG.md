@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.2.5 - 2026-11-09
+
+Publication prep, ahead of this repo going public (AGPL, see README "AGPL note"), plus two
+small UI fixes Aaron asked for.
+
+CSP tightened to a nonce-based strict policy, replacing the stock Next.js default
+(`'unsafe-inline'`/`'unsafe-eval'` on `script-src`). `proxy.ts` now generates one nonce per
+request and forwards it as the `x-nonce` request header; `lib/csp.ts`'s `buildCSP` uses it as
+`script-src 'self' 'nonce-<value>' 'strict-dynamic' https:` with no `unsafe-eval` anywhere.
+Next.js reads the nonce back out of its own `Content-Security-Policy` response header and
+applies it to every framework-rendered script automatically (RSC hydration payload, page
+bundles) -- see https://nextjs.org/docs/app/guides/content-security-policy. `style-src` is
+now split: `style-src-elem` is nonce'd (covers `<style>` tags), `style-src-attr` keeps
+`'unsafe-inline'` (CSP has no nonce mechanism for the `style=""` attribute, and Radix UI's
+popovers/tooltips/dropdowns position themselves by writing to it at runtime with no fixed,
+hashable value). Added `base-uri 'self'` and `form-action 'self'` (neither was set before).
+`server/flow-initiation.ts`'s `buildAutoSubmitFormResponse` (the SAML POST-binding
+auto-submit form, unreached in this pilot -- no SAML IdP configured) used an inline
+`onload=""` handler, which a nonce can't cover either; replaced it with a nonce'd `<script>`
+tag. Removed the unused, misleading `constants/csp.js` (dead code, didn't match the real
+enforced policy). Verified with zero `securitypolicyviolation` events across sign-in, invite
+landing, already-used, expired, not-found and new-device, plus one full invite redemption
+through to an authenticated `lab-next.causality.bio` session.
+
+Desktop sign-in page's email input had no visible resting border (stock Zitadel's 33%-alpha
+`#1a191954` was close to invisible against the near-white card). Bumped to 55%
+(`#1a19198c` light, `#f9f7f785` dark) so the empty field reads as a field before focus.
+
+Added a "Source code" link to `https://github.com/AaronPutting/causality-login` in the
+login page's footer, every screen, alongside the theme switch.
+
+README and this file's "Repo visibility" note rewritten for the repo going public: explicit
+link to upstream `zitadel/zitadel`, what Causality changed on top of it, and why AGPL makes
+the source public even though the app itself stays pilot-only.
+
 ## 0.2.4 - 2026-11-07
 
 Instant feedback on the two submit buttons Aaron actually clicks, after his own test showed

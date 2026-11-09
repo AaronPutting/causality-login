@@ -15,6 +15,15 @@ export async function proxy(request: NextRequest) {
   // Add the original URL as a header to all requests
   const requestHeaders = new Headers(request.headers);
 
+  // Fresh per-request nonce for the strict CSP below. Set on the request too
+  // (as x-nonce) so any server component/route handler downstream of this
+  // middleware can read it back via headers() or request.headers and reuse
+  // the exact same value -- see server/flow-initiation.ts, which has to
+  // attach it by hand to the one hand-built HTML response (SAML auto-submit
+  // form) that Next.js's own automatic nonce propagation doesn't reach.
+  const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
+  requestHeaders.set("x-nonce", nonce);
+
   // Extract "organization" search param from the URL and set it as a header if available
   const organization = request.nextUrl.searchParams.get("organization");
   if (organization) {
@@ -42,7 +51,7 @@ export async function proxy(request: NextRequest) {
     try {
       const iframeOrigins = await getIframeOrigins(baseUrl, instanceHost, publicHost);
 
-      responseHeaders.set("Content-Security-Policy", buildCSP({ serviceUrl: baseUrl, iframeOrigins }));
+      responseHeaders.set("Content-Security-Policy", buildCSP({ serviceUrl: baseUrl, iframeOrigins, nonce }));
 
       if (!iframeOrigins) {
         responseHeaders.set("X-Frame-Options", "deny");
@@ -51,11 +60,11 @@ export async function proxy(request: NextRequest) {
       logger.error("Failed to load security settings for CSP, using default CSP", {
         error: err instanceof Error ? err.message : String(err),
       });
-      responseHeaders.set("Content-Security-Policy", buildCSP({ serviceUrl: baseUrl }));
+      responseHeaders.set("Content-Security-Policy", buildCSP({ serviceUrl: baseUrl, nonce }));
       responseHeaders.set("X-Frame-Options", "deny");
     }
   } else {
-    responseHeaders.set("Content-Security-Policy", buildCSP({ serviceUrl: baseUrl }));
+    responseHeaders.set("Content-Security-Policy", buildCSP({ serviceUrl: baseUrl, nonce }));
     responseHeaders.set("X-Frame-Options", "deny");
   }
 

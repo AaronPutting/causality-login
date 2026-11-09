@@ -1,13 +1,16 @@
 # causality-login
 
-Causality.bio's fork of Zitadel's Login V2 UI (`apps/login` from the `zitadel/zitadel`
-monorepo, tag `v4.20.1`), replacing the stock `ghcr.io/zitadel/zitadel-login` image in
-`causality-auth`'s `docker-compose.yml`. One addition on top of stock: a one-click invite
-flow, so a guest who clicks a link Aaron pasted into his own mail lands on the shared lab
-page already signed in, no password, no passkey setup, no code to type.
+Causality.bio's fork of Zitadel's Login V2 UI (`apps/login` from the
+[`zitadel/zitadel`](https://github.com/zitadel/zitadel) monorepo, tag `v4.20.1`), replacing
+the stock `ghcr.io/zitadel/zitadel-login` image in `causality-auth`'s `docker-compose.yml`.
+One addition on top of stock: a one-click invite flow, so a guest who clicks a link Aaron
+pasted into his own mail lands on the shared lab page already signed in, no password, no
+passkey setup, no code to type. Licensed AGPL-3.0, same as upstream (see `LICENSE` and "AGPL
+note" below).
 
-Private for now (AGPL note below). This repo and whatever's built from it on the Keller
-are the only copies; there is no CI, the build runs by hand on the Keller.
+This repo and whatever's built from it on the Keller are the only copies; there is no CI,
+the build runs by hand on the Keller. Public source, not a public service: the only people
+who use the app it builds are Aaron and pilot invitees he personally vouches for.
 
 ## Layout
 
@@ -133,11 +136,13 @@ lockfile and vendor it.
 
 ## AGPL note
 
-`zitadel/zitadel` is AGPL-3.0 (`LICENSE`, carried over from upstream). AGPL requires
-offering this modified app's source to anyone who uses it over a network, once outside
-people actually use it. This repo stays **private** until Aaron decides it's time to open
-it -- that's his call, not a default. Until then, the only people who "use" it are Aaron and
-pilot invitees he personally vouches for, not the public.
+[`zitadel/zitadel`](https://github.com/zitadel/zitadel) is AGPL-3.0 (`LICENSE`, carried over
+unchanged from upstream). AGPL requires offering this modified app's source to anyone who
+uses it over a network, and outside people (pilot invitees) do use it -- so Aaron made this
+repo public rather than carry that obligation privately. What changed on top of stock
+Zitadel, all in this README: the one-click invite flow (`invite-store.ts`,
+`invite-redeem.ts`, the `/go` page), the password allowlist, and the branding. A
+"Source code" link to this repo is in the login page's own footer, on every screen.
 
 ## CLAUDE.md
 

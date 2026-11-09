@@ -40,13 +40,17 @@ function setCSPHeaders(
   response: NextResponse,
   serviceConfig: ServiceConfig,
   securitySettings: SecuritySettings | undefined,
+  nonce?: string,
 ): void {
   const iframeOrigins =
     securitySettings?.embeddedIframe?.enabled && securitySettings.embeddedIframe.allowedOrigins.length > 0
       ? securitySettings.embeddedIframe.allowedOrigins
       : undefined;
 
-  response.headers.set("Content-Security-Policy", buildCSP({ serviceUrl: serviceConfig.baseUrl, iframeOrigins }));
+  response.headers.set(
+    "Content-Security-Policy",
+    buildCSP({ serviceUrl: serviceConfig.baseUrl, iframeOrigins, nonce }),
+  );
 
   if (!iframeOrigins) {
     response.headers.set("X-Frame-Options", "deny");
@@ -59,21 +63,38 @@ function setCSPHeaders(
  * requires a form post instead of a redirect (e.g. SAML POST bindings).
  * Callers must validate `url` (isSafeRedirectUri) before calling; all values
  * are HTML-escaped here.
+ *
+ * The submit used to run from a `<body onload="...">` attribute. CSP has no
+ * nonce mechanism for inline event-handler attributes (only for <script>/
+ * <style> elements), so once script-src stopped carrying 'unsafe-inline'
+ * that attribute would have been silently blocked. It now reads the same
+ * nonce the proxy (proxy.ts) already put on this request's
+ * Content-Security-Policy response header -- see its 'x-nonce' request
+ * header -- and runs as a nonce'd <script> element instead, which Next's own
+ * CSP nonce handling only covers for tags it renders itself, not hand-built
+ * HTML like this one.
  */
-function buildAutoSubmitFormResponse(url: string, fields: Record<string, string>): NextResponse {
+function buildAutoSubmitFormResponse(request: NextRequest, url: string, fields: Record<string, string>): NextResponse {
+  const nonce = request.headers.get("x-nonce") ?? undefined;
+
   const hiddenInputs = Object.entries(fields)
     .map(([key, value]) => `<input type="hidden" name="${escapeHtml(key)}" value="${escapeHtml(value)}" />`)
     .join("\n");
 
+  const scriptTag = nonce
+    ? `<script nonce="${escapeHtml(nonce)}">document.forms[0].submit();</script>`
+    : "";
+
   const html = `
     <html>
-      <body onload="document.forms[0].submit()">
+      <body>
         <form action="${escapeHtml(url)}" method="post">
           ${hiddenInputs}
           <noscript>
             <button type="submit">Continue</button>
           </noscript>
         </form>
+        ${scriptTag}
       </body>
     </html>
   `;
@@ -198,7 +219,7 @@ const resolveLoginHint = async ({
         return null;
       }
 
-      return buildAutoSubmitFormResponse(res.samlData.url, res.samlData.fields);
+      return buildAutoSubmitFormResponse(request, res.samlData.url, res.samlData.fields);
     }
 
     if (res && "error" in res && res.error) {
@@ -346,7 +367,7 @@ export async function handleOIDCFlowInitiation(params: FlowInitiationParams): Pr
         }
 
         if (response.fields) {
-          return buildAutoSubmitFormResponse(response.url, response.fields);
+          return buildAutoSubmitFormResponse(request, response.url, response.fields);
         }
 
         let url = response.url;
@@ -429,7 +450,7 @@ export async function handleOIDCFlowInitiation(params: FlowInitiationParams): Pr
       const selectedSession = await findValidSession({ serviceConfig, sessions, authRequest, organization });
 
       const noSessionResponse = NextResponse.json({ error: "No active session found" }, { status: 400 });
-      setCSPHeaders(noSessionResponse, serviceConfig, securitySettings);
+      setCSPHeaders(noSessionResponse, serviceConfig, securitySettings, request.headers.get("x-nonce") ?? undefined);
 
       if (!selectedSession || !selectedSession.id) {
         return noSessionResponse;
@@ -462,7 +483,7 @@ export async function handleOIDCFlowInitiation(params: FlowInitiationParams): Pr
         return NextResponse.json({ error: "Unsafe redirect URI was blocked" }, { status: 400 });
       }
       const callbackResponse = NextResponse.redirect(callbackUrl);
-      setCSPHeaders(callbackResponse, serviceConfig, securitySettings);
+      setCSPHeaders(callbackResponse, serviceConfig, securitySettings, request.headers.get("x-nonce") ?? undefined);
       return callbackResponse;
     } else {
       let selectedSession = await findValidSession({ serviceConfig, sessions, authRequest, organization });
@@ -666,7 +687,7 @@ export async function handleSAMLFlowInitiation(params: FlowInitiationParams): Pr
         logger.warn("Blocked unsafe SAML post URL", { url });
         return NextResponse.json({ error: "Unsafe redirect URI was blocked" }, { status: 400 });
       }
-      return buildAutoSubmitFormResponse(url, {
+      return buildAutoSubmitFormResponse(request, url, {
         RelayState: binding.value.relayState,
         SAMLResponse: binding.value.samlResponse,
       });

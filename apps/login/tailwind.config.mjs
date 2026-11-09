@@ -106,13 +106,17 @@ export default {
           light: {
             label: "#000000c7",
             background: "#00000004",
-            border: "#1a191954",
+            // Stock Zitadel's 33%-alpha value (#1a191954) was close to invisible
+            // against the near-white card background (--theme-light-background-500,
+            // #fafaf7) -- bumped to 55% so the resting (unfocused) field reads as a
+            // field, matching the clearly-visible focus/hover states it already had.
+            border: "#1a19198c",
             hoverborder: "1a1b1b",
           },
           dark: {
             label: "#ffffffc7",
             background: "#00000020",
-            border: "#f9f7f775",
+            border: "#f9f7f785",
             hoverborder: "#e0e0e0",
           },
         },
