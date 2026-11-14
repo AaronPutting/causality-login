@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.8 - 2026-11-14
+
+No more dead ends after signing in, and plainer copy.
+
+- `/signedin` without a `requestId` (someone signed in directly at login.causality.bio, no
+  app waiting for a callback) now redirects server side to the instance login policy's
+  `defaultRedirectUri` (https://lab.causality.bio/) instead of showing a Continue button.
+  Any `requestId`, including the `device_` flow, keeps the stock page.
+- Sign-in page hint: "Enter the email your invite was sent to." is now "Sign in with the
+  email you use for Causality.bio." (German locale: "Anmelden" and the same sentence, was
+  the stock "Willkommen zurück!").
+- `/new-device` says on its first render what happened and what to do: the sign-in link has
+  expired, ask Aaron for a new one (mailto aaron@causality.bio), plus "Use a different email"
+  back to the sign-in page with the same `requestId`. The old two-step email form
+  (`device-form.tsx`) is gone; it never made a server call and the new page doesn't either,
+  so a known email still looks exactly like an unknown one.
+
 ## 0.2.7 - 2026-11-09
 
 Fixes a guest-visible crash: a revoked or deactivated invite link landed on a raw,

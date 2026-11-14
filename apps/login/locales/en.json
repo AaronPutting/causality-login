@@ -24,7 +24,7 @@
   },
   "loginname": {
     "title": "Sign in",
-    "description": "Enter the email your invite was sent to.",
+    "description": "Sign in with the email you use for Causality.bio.",
     "register": "Register new user",
     "submit": "Continue",
     "labels": {

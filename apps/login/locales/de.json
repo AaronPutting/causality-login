@@ -23,8 +23,8 @@
     }
   },
   "loginname": {
-    "title": "Willkommen zurück!",
-    "description": "Geben Sie Ihre Anmeldedaten ein.",
+    "title": "Anmelden",
+    "description": "Melde dich mit der E-Mail an, die du für Causality.bio nutzt.",
     "register": "Neuen Benutzer registrieren",
     "submit": "Weiter",
     "labels": {

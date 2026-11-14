@@ -11,6 +11,7 @@ import { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
 import { headers } from "next/headers";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations("signedin");
@@ -42,6 +43,15 @@ export default async function Page(props: { searchParams: Promise<any> }) {
   );
 
   const isSamePage = redirectUri?.startsWith("/signedin") ?? false;
+
+  // Causality.bio (0.2.8): signed in directly at login.causality.bio (no requestId, so no app
+  // waiting for a callback) used to stop here on a page with a Continue button, or with
+  // nothing at all before a defaultRedirectUri was set. If the instance login policy has a
+  // defaultRedirectUri, go straight there instead. Any requestId (an OIDC/SAML request, or a
+  // device_ flow, which must stay on this page) keeps stock behavior.
+  if (!requestId && redirectUri && !isSamePage) {
+    redirect(redirectUri);
+  }
 
   return (
     <DynamicTheme branding={branding}>
